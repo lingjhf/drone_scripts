@@ -1,0 +1,60 @@
+---
+kind: pipeline
+type: docker
+name: default
+
+steps:
+  - name: restore cache
+    image: meltwater/drone-cache
+    pull: "if-not-exists"
+    settings:
+      backend: "filesystem"
+      restore: true
+      cache_key: "volume"
+      # filesystem_cache_root: "/tmp/cache"
+      mount:
+        - "./.gradle"
+        - "./android-sdk"
+        - "./pub_cache"
+    volumes:
+      - name: cache
+        path: /tmp/cache
+
+  - name: build apk
+    image: ghcr.io/lingjhf/flutter-android:3.27.1
+    pull: "if-not-exists"
+    commands:
+      - export PUB_CACHE=/drone/src/pub_cache
+      - export GRADLE_USER_HOME=/drone/src/.gradle ANDROID_HOME=/drone/src/android-sdk
+      - export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/tools
+      - echo -e "sdk.dir=/drone/src/android-sdk\nflutter.sdk=/opt/flutter" > ./android/local.properties
+      - |
+        if [ ! -d /drone/src/android-sdk ]; then
+          yes | /opt/cmdline-tools/latest/bin/sdkmanager --sdk_root=/drone/src/android-sdk  "platform-tools" "tools" "build-tools;30.0.3" "platforms;android-30"
+          ln -s /opt/cmdline-tools /drone/src/android-sdk/cmdline-tools
+          yes | flutter doctor --android-licenses
+        fi
+      - flutter config --no-analytics
+      - flutter config --no-cli-animations
+      - flutter build apk
+
+  - name: rebuild cache
+    image: meltwater/drone-cache
+    pull: "if-not-exists"
+    settings:
+      backend: "filesystem"
+      rebuild: true
+      cache_key: "volume"
+      # filesystem_cache_root: "/tmp/cache"
+      mount:
+        - "./.gradle"
+        - "./android-sdk"
+        - "./pub_cache"
+    volumes:
+      - name: cache
+        path: /tmp/cache
+
+volumes:
+  - name: cache
+    host:
+      path: /var/lib/cache
